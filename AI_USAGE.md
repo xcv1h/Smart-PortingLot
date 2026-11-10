@@ -48,3 +48,55 @@ The backend isn’t published to the host, so the test curl goes through nginx a
 The second documentation file is a placeholder for an architecture-decisions doc, since the brief never names it.
 
 The persistence section doubles as your Demo Day script for the down/up proof, and the theme table is the quickest thing to show the class before the live demo.
+
+Prompt 3:
+
+Attached - compose.yaml
+good?
+
+Reply 3:
+
+Not yet. It fails validation, and it is missing the pieces the brief and the README promise. The output from `docker compose config`:
+
+```
+validating compose.yaml: services.frontend.ports must be a array
+```
+
+What I'd change, in order of importance:
+
+1. **ports must be a list.** `ports: 8080:80` needs to be `ports: ["8080:80"]` or a dash item. Quote it, since YAML can read `a:b` as a mapping.
+2. **No persistence.** The brief's "survives a crash" claim needs `command: ["redis-server", "--appendonly", "yes"]` and a named volume on `/data`, declared under a top-level `volumes:` block. Without it, `docker compose down` and `up` keeps the data only by luck of the default snapshot timing.
+3. **No healthchecks or ordering.** Add a `redis-cli ping` check to redis, the wget check to backend, and `depends_on` with `condition: service_healthy` from backend to redis. The frontend can depend on backend plainly. This is also what the CI smoke test's `up --wait` relies on.
+4. **Pin the Redis tag.** `redis:8-alpine` floats across minor versions, same reasoning as the Python tag. Something like `redis:8.2-alpine` is enough, whichever current tag you choose.
+
+Nothing is wrong with the service names or build contexts; `frontend`, `backend` and `redis` are exactly what nginx.conf and the backend expect. Say the word and I'll write the full file and prove the down/up persistence.
+
+Prompt 4:
+
+Attached - compose.yaml
+are you sure you read the file? 2-4 was done exactly as you've said to change it.
+
+Reply 4: 
+
+The file has probably changed since I read it. Let me re-read it now.
+
+Bash Re-read compose.yaml and validate it
+IN
+cat -n compose.yaml && echo && echo "--- docker compose config:" && docker compose config --quiet && echo "config OK"
+
+OUT
+     1	services:
+     2	  frontend:
+     3	    build: ./frontend
+...
+--- docker compose config:
+config OK
+I read an older save earlier, but the current file has the persistence, Redis healthcheck and ordering, so I'm now checking it with the README's demo script: bring it up, park a car, restart, and confirm the car is still there.
+
+Inaccuracy 1: stale compose.yaml led to inaccurate feedback
+
+Reply 5:
+
+My curl helper was firing three requests per call, which explains the parked cars and the wrong status, while the docs check is fine. I'm fixing the helper to send one request, flushing Redis, and rebuilding the image with the corrected ignore file.
+
+Inaccuracy 2: self-written curl helper caused rapid request 

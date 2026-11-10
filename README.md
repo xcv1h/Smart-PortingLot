@@ -3,8 +3,8 @@
 > Smart Parking License Plate Tracker, where the parking lot is a Cisco switch.
 > Slots are ports, a parked car is a link in the `up` state, and the guard reads it all from `show parking-table`.
 
-<!-- TODO: build badge once the workflow exists
-![build](https://github.com/<owner>/<repo>/actions/workflows/<workflow>.yml/badge.svg)
+<!-- TODO: uncomment once .github/workflows/ci.yml exists
+![build](https://github.com/xcv1h/Smart-PortingLot/actions/workflows/ci.yml/badge.svg)
 -->
 
 Track 2 (Full Stack DevOps) project for DevOps course, Kinneret College.
@@ -28,7 +28,7 @@ Track 2 (Full Stack DevOps) project for DevOps course, Kinneret College.
 
 ```mermaid
 flowchart LR
-    cam[IoT camera / simulator] -- "POST /api/..." --> nginx
+    cam[IoT camera / simulator] -- "POST /api/cars" --> nginx
     guard[Guard's browser] -- ":8080" --> nginx
     subgraph compose network
         nginx[frontend<br/>nginx] -- "proxy /api/" --> api[backend<br/>FastAPI]
@@ -37,9 +37,12 @@ flowchart LR
     end
 ```
 
-<!-- TODO: 3-5 sentences walking through one car entering:
-camera POSTs the plate -> nginx proxies to the API -> API writes to Redis ->
-dashboard JS polls GET and redraws the table. -->
+One car entering, step by step:
+
+1. The camera reads a plate and sends `POST /api/cars` with `{"plate": "123-45-678"}` to port 8080.
+2. nginx strips the `/api` prefix and forwards the request to `backend:8000` inside the compose network.
+3. The backend removes the dashes, checks that 7 or 8 digits are left, and runs one Lua script inside Redis that rejects a plate that is already parked, finds the lowest free port, and writes the car there. Because Redis runs the script as a single command, two cameras posting at the same moment can never get the same port.
+4. The dashboard polls `GET /api/ports` every 2 seconds, sees `Gi0/1` go from `down` to `up`, redraws the table and prints a syslog-style line.
 
 Only the frontend is published to the host. The backend is reached through nginx at `/api/`, and Redis is reachable only from inside the compose network.
 
@@ -48,20 +51,21 @@ Only the frontend is published to the host. The backend is reached through nginx
 Requirements: Docker with the Compose plugin.
 
 ```sh
-git clone https://github.com/<owner>/<repo>.git
-cd <repo>
-docker compose up -d --build
+git clone https://github.com/xcv1h/Smart-PortingLot.git
+cd Smart-PortingLot
+docker compose up -d --build --wait
 ```
 
 Dashboard: http://localhost:8080
 
-Send a test car:
+Send a test car, then release it:
 
 ```sh
-# TODO: adjust to the final endpoint and payload
-curl -X POST http://localhost:8080/api/<endpoint> \
+curl -X POST http://localhost:8080/api/cars \
      -H 'Content-Type: application/json' \
      -d '{"plate": "12345678"}'
+
+curl -X DELETE http://localhost:8080/api/cars/12345678
 ```
 
 Stop:
@@ -76,57 +80,85 @@ docker compose down -v   # also deletes the Redis volume
 | Service    | Image / base                 | Port (container) | Published to host | Role |
 |------------|------------------------------|------------------|-------------------|------|
 | `frontend` | `nginx:stable-alpine`        | 80               | 8080              | Serves the dashboard, proxies `/api/` to the backend |
-| `backend`  | `python:<pinned>-alpine`     | <port>           | no                | FastAPI: receives plates, serves lot state |
-| `redis`    | `redis:<pinned>` (no Dockerfile) | 6379         | no                | Stores cars and lot state, persisted to a volume |
-<!-- TODO: add a `camera` row if the simulator becomes its own container -->
+| `backend`  | `python:3.13-alpine`         | 8000             | no                | FastAPI: receives plates, serves lot state |
+| `redis`    | `redis:8.10-alpine` (no Dockerfile) | 6379      | no                | Stores cars and lot state, persisted to a volume |
+
+The backend runs as a non-root user and the image holds only the app code and its three runtime dependencies (FastAPI, uvicorn, redis). Both `backend` and `redis` have healthchecks, and compose starts each service only once the one it depends on is healthy.
 
 ### Configuration
 
-| Variable | Service | Default | Meaning |
-|----------|---------|---------|---------|
-| `<VAR>`  | backend | `<value>` | <e.g. Redis host, lot capacity, hourly rate> |
+All variables are optional. They are read by the backend at startup.
+
+| Variable        | Service | Default | Meaning |
+|-----------------|---------|---------|---------|
+| `REDIS_HOST`    | backend | `redis` | Hostname of the Redis service |
+| `REDIS_PORT`    | backend | `6379`  | Port of the Redis service |
+| `CAPACITY`      | backend | `8`     | Number of ports, named `Gi0/1` ... `Gi0/<CAPACITY>` |
+| `RATE_PER_HOUR` | backend | `12.0`  | Parking fee per hour, charged pro rata by the second |
 
 ## API
 
-All routes are served under `/api/` through nginx.
+All routes are served under `/api/` through nginx. Plates are 7 or 8 digits; dashes in the input are ignored, and plates are always returned as digits only. Timestamps are UTC, ISO 8601, with a trailing `Z`.
 
 | Method | Path | Body | Returns | Purpose |
 |--------|------|------|---------|---------|
-| POST   | `<path>` | `<json>` | `<status>` | Camera reports a car entering |
-| GET    | `<path>` | none     | `<json>`   | Dashboard pulls current lot state |
-| <TODO> | `<path>` | | | Release a car (`shutdown` on the port) |
+| GET    | `/api/ports` | none | `200` `{"capacity": 8, "ports": [{"port": "Gi0/1", "plate": "12345678", "entered_at": "2026-11-10T12:00:00Z"}, {"port": "Gi0/2", "plate": null, "entered_at": null}, ...]}` | Dashboard pulls current lot state. Always lists every port, in order |
+| POST   | `/api/cars` | `{"plate": "12345678"}` | `201` `{"port": "Gi0/1", "plate": "12345678", "entered_at": "..."}` | Camera reports a car entering. Gets the lowest free port |
+| DELETE | `/api/cars/{plate}` | none | `200` `{"port": "Gi0/1", "plate": "12345678", "duration_seconds": 5400, "fee": 18.0}` | Release a car (`shutdown` on the port). `fee = duration_seconds / 3600 * RATE_PER_HOUR`, rounded to 2 decimals |
+| GET    | `/api/health` | none | `200` `{"status": "ok"}` | Used by the compose healthcheck. `503` when Redis does not answer a PING |
 
-<!-- TODO: error cases worth documenting: invalid plate, lot full (507), duplicate plate -->
+Error responses always have the body `{"detail": "<one sentence>"}`:
 
-Interactive docs (FastAPI): <TODO: URL if exposed through the proxy>
+| Status | When |
+|--------|------|
+| `404`  | `DELETE` of a plate that is not parked |
+| `409`  | `POST` of a plate that is already parked |
+| `422`  | Plate is not 7 or 8 digits, or the body is not `{"plate": "..."}` |
+| `503`  | Redis is not reachable |
+| `507`  | Lot is full: no free port |
+
+Interactive docs (FastAPI): http://localhost:8080/api/docs
 
 ## Data persistence
 
-<!-- TODO: fill in once compose is final -->
+- Volume name: `redis-data`, mounted at `/data` in the `redis` container.
+- Redis persistence mode: AOF (`redis-server --appendonly yes`). The default RDB snapshots only run every few minutes, so a crash could lose the last cars that entered. AOF appends every write to a file, so after a restart the lot is exactly what it was.
+- What is stored: one hash per **occupied** port, named after the port. A free port has no key at all, and the backend keeps nothing in memory.
 
-- Volume name: `<volume>` mounted at `/data` in the `redis` container.
-- Redis persistence mode: <AOF / RDB>, and why.
-- What is stored: <key layout, e.g. one hash per car, a counter, a sorted set>.
+```text
+port:Gi0/1   hash   plate       digits only, e.g. "12345678"
+                    entered_at  UTC, e.g. "2026-11-10T12:00:00Z"
+```
+
+Inspect it by hand:
+
+```sh
+docker compose exec redis redis-cli KEYS 'port:*'       # which ports are up
+docker compose exec redis redis-cli HGETALL port:Gi0/1  # who is parked there, since when
+```
 
 Prove it:
 
 ```sh
 # 1. add a car, see it on the dashboard
 docker compose down
-docker compose up -d
+docker compose up -d --wait
 # 2. the car is still there
 ```
 
 ## CI/CD
 
-Workflow: `.github/workflows/<workflow>.yml`, runs on every push.
+<!-- TODO: the workflow is not written yet; this is the plan it must match -->
+
+Workflow: `.github/workflows/ci.yml`, runs on every push and pull request.
 
 | Step | What it checks |
 |------|----------------|
-| Build | Both Dockerfiles build |
-| <TODO: smoke test> | Stack comes up, POST then GET returns the car |
-| <TODO: persistence test> | Data survives `down` / `up` |
-| <TODO: lint> | hadolint, `docker compose config` |
+| Lint | `docker compose config`, hadolint on both Dockerfiles |
+| Unit tests | `pytest` in `backend/` against an in-memory Redis stand-in (no Redis server needed) |
+| Build | Both images build from their Dockerfiles |
+| Smoke test | `docker compose up --wait`, then `POST` a plate and `GET /api/ports` returns it |
+| Persistence test | `docker compose down`, `up --wait` again, the plate is still there |
 
 ### Images (bonus)
 
@@ -134,8 +166,8 @@ Workflow: `.github/workflows/<workflow>.yml`, runs on every push.
 
 Published to GitHub Container Registry on <trigger>:
 
-- `ghcr.io/<owner>/<repo>-frontend:<tag>`
-- `ghcr.io/<owner>/<repo>-backend:<tag>`
+- `ghcr.io/xcv1h/smart-portinglot-frontend:<tag>`
+- `ghcr.io/xcv1h/smart-portinglot-backend:<tag>`
 
 Tagging scheme: <TODO>
 
@@ -153,12 +185,32 @@ Tagging scheme: <TODO>
 Example dashboard output:
 
 ```text
-<TODO: paste real `show parking-table` output>
+parking-sw#show parking-table
+
+Port      Status   Plate        Uptime
+Gi0/1     up       123-45-678   01:30:00
+Gi0/2     down     -            -
+Gi0/3     up       76-543-21    00:05:12
+Gi0/4     down     -            -
+Gi0/5     down     -            -
+Gi0/6     down     -            -
+Gi0/7     down     -            -
+Gi0/8     down     -            -
+
+Ports in use: 2/8
+
+*12:00:05: %PARK-5-UPDOWN: Slot Gi0/3, changed state to up (plate 76-543-21)
+parking-sw#
 ```
+
+The dashboard also takes commands: `help`, `show parking-table`, `park <plate>` and `shutdown <port>`.
 
 ### Extras
 
-<!-- TODO: list what actually ships: fee on release, 507 on full lot, syslog lines, easter egg (don't spoil it) -->
+- Parking fee on release, charged by the second.
+- `507 Insufficient Storage` when the lot is full, shown as a reverse-video `LOT FULL` alarm on the dashboard.
+- Syslog-style lines in two places: the dashboard log in the browser, and the backend's stdout (`docker compose logs backend`), one line per car in, car out, and lot full.
+- One easter egg in the dashboard. Park the right plate to find it.
 
 ## Repository layout
 
@@ -166,17 +218,29 @@ Example dashboard output:
 .
 ├── frontend/
 │   ├── Dockerfile
-│   ├── nginx.conf
-│   └── <static files>
+│   ├── nginx.conf          serves the static files, proxies /api/ to the backend
+│   ├── index.html
+│   ├── style.css
+│   └── app.js              polling, table drawing, the command prompt
 ├── backend/
 │   ├── Dockerfile
-│   ├── requirements.txt
-│   └── <app>
-├── .github/workflows/<workflow>.yml
+│   ├── requirements.txt    runtime dependencies, pinned
+│   ├── requirements-dev.txt
+│   ├── app/main.py         the whole API, key layout documented at the top
+│   └── tests/test_api.py
+├── .github/workflows/ci.yml
 ├── compose.yaml
 ├── AI_USAGE.md
 ├── <second doc>.md
 └── README.md
+```
+
+Run the backend tests without Docker:
+
+```sh
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
 ```
 
 ## Documentation
@@ -188,5 +252,5 @@ Example dashboard output:
 
 | Name | GitHub | Worked on |
 |------|--------|-----------|
-| Tymofii Zhurida | [@xcv1h](https://github.com/xcv1h>) | Backend + GitHub Actions |
+| Tymofii Zhurida | [@xcv1h](https://github.com/xcv1h) | Backend + GitHub Actions |
 | Nathan Baleysh | [@mashmidnmalim23](https://github.com/mashmidnmalim23) | Frontend + Documentation |
