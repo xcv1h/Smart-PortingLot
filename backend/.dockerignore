@@ -1,0 +1,6 @@
+# Keep the build context free of anything the image does not need at runtime.
+# (** is needed to match these in sub-folders too, e.g. app/__pycache__.)
+tests/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/

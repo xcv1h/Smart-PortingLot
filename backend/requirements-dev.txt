@@ -1,0 +1,6 @@
+# Test-only. Pulls in requirements.txt so one install gives a working test setup:
+#   pip install -r requirements-dev.txt && python -m pytest
+-r requirements.txt
+pytest==9.2.0
+httpx2==2.16.0           # needed by FastAPI's TestClient
+fakeredis[lua]==2.40.0   # in-memory Redis stand-in; [lua] so our EVAL scripts really run
