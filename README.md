@@ -41,7 +41,7 @@ One car entering, step by step:
 
 1. The camera reads a plate and sends `POST /api/cars` with `{"plate": "123-45-678"}` to port 8080.
 2. nginx strips the `/api` prefix and forwards the request to `backend:8000` inside the compose network.
-3. The backend removes the dashes, checks that 7 or 8 digits are left, and runs one Lua script inside Redis that rejects a plate that is already parked, finds the lowest free port, and writes the car there. Because Redis runs the script as a single command, two cameras posting at the same moment can never get the same port.
+3. The backend removes the dashes, checks that 7 or 8 digits are left, and runs one Lua script inside Redis that rejects a plate that is already parked, finds the lowest free port, and writes the car there in one atomic step (see [ARCHITECTURE.md](ARCHITECTURE.md#6-a-lua-script-for-parking-and-releasing)).
 4. The dashboard polls `GET /api/ports` every 2 seconds, sees `Gi0/1` go from `down` to `up`, redraws the table and prints a syslog-style line.
 
 Only the frontend is published to the host. The backend is reached through nginx at `/api/`, and Redis is reachable only from inside the compose network.
@@ -83,7 +83,7 @@ docker compose down -v   # also deletes the Redis volume
 | `backend`  | `python:3.13-alpine`         | 8000             | no                | FastAPI: receives plates, serves lot state |
 | `redis`    | `redis:8.10-alpine` (no Dockerfile) | 6379      | no                | Stores cars and lot state, persisted to a volume |
 
-The backend runs as a non-root user and the image holds only the app code and its three runtime dependencies (FastAPI, uvicorn, redis). Both `backend` and `redis` have healthchecks, and compose starts each service only once the one it depends on is healthy.
+The backend runs as a non-root user and the image holds only the app code and its three runtime dependencies (FastAPI, uvicorn, redis). Both `backend` and `redis` have healthchecks, and compose starts each service only once the one it depends on is healthy. The reasons behind these choices are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Configuration
 
@@ -122,8 +122,8 @@ Interactive docs (FastAPI): http://localhost:8080/api/docs
 ## Data persistence
 
 - Volume name: `redis-data`, mounted at `/data` in the `redis` container.
-- Redis persistence mode: AOF (`redis-server --appendonly yes`). The default RDB snapshots only run every few minutes, so a crash could lose the last cars that entered. AOF appends every write to a file, so after a restart the lot is exactly what it was.
-- What is stored: one hash per **occupied** port, named after the port. A free port has no key at all, and the backend keeps nothing in memory.
+- Redis persistence mode: AOF (`redis-server --appendonly yes`), so every write is on disk the moment it happens (why not snapshots: [ARCHITECTURE.md](ARCHITECTURE.md#8-aof-persistence-on-a-named-volume)).
+- What is stored: one hash per **occupied** port, named after the port. A free port has no key at all, and the backend keeps nothing in memory (why this layout: [ARCHITECTURE.md](ARCHITECTURE.md#5-one-hash-per-occupied-port)).
 
 ```text
 port:Gi0/1   hash   plate       digits only, e.g. "12345678"
@@ -231,7 +231,7 @@ The dashboard also takes commands: `help`, `show parking-table`, `park <plate>` 
 ├── .github/workflows/ci.yml
 ├── compose.yaml
 ├── AI_USAGE.md
-├── <second doc>.md
+├── ARCHITECTURE.md
 └── README.md
 ```
 
@@ -246,11 +246,11 @@ python -m pytest
 ## Documentation
 
 - [AI_USAGE.md](AI_USAGE.md): prompts sent to AI tools, and what they got wrong.
-- [<second doc>.md](<second doc>.md): <TODO: architecture decisions, pending confirmation of what the second required file is>.
+- [ARCHITECTURE.md](ARCHITECTURE.md): architecture decisions, with the alternatives we did not take and why.
 
 ## Team
 
 | Name | GitHub | Worked on |
 |------|--------|-----------|
-| Tymofii Zhurida | [@xcv1h](https://github.com/xcv1h) | Backend + GitHub Actions |
-| Nathan Baleysh | [@mashmidnmalim23](https://github.com/mashmidnmalim23) | Frontend + Documentation |
+| Tymofii Zhurida | [@xcv1h](https://github.com/xcv1h) | Backend + Documentation |
+| Nathan Baleysh | [@mashmidnmalim23](https://github.com/mashmidnmalim23) | Frontend + GitHub Actions |

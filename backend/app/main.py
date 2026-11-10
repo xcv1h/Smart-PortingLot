@@ -163,10 +163,10 @@ def park_car(body: CarIn):
     if result == "DUPLICATE":
         raise HTTPException(409, f"Plate {plate} is already parked.")
     if result == "FULL":
-        log.warning(f"%PARKING-4-FULL: No free port for plate {plate}")
+        log.warning(f"%PARK-2-FULL: No free port for plate {plate}")
         raise HTTPException(507, f"The lot is full, all {CAPACITY} ports are up.")
     port = PORTS[result - 1]
-    log.info(f"%LINK-3-UPDOWN: Interface {port}, changed state to up (plate {plate})")
+    log.info(f"%PARK-5-UPDOWN: Slot {port}, changed state to up (plate {plate})")
     return {"port": port, "plate": plate, "entered_at": entered_at}
 
 
@@ -181,7 +181,7 @@ def release_car(plate: str):
     duration = int((utc_now() - datetime.fromisoformat(entered_at)).total_seconds())
     fee = round(duration / 3600 * RATE_PER_HOUR, 2)
     log.info(
-        f"%LINK-3-UPDOWN: Interface {port}, changed state to down (plate {plate}, {duration}s, fee {fee})"
+        f"%PARK-5-UPDOWN: Slot {port}, changed state to down (plate {plate}, {duration}s, fee {fee})"
     )
     return {"port": port, "plate": plate, "duration_seconds": duration, "fee": fee}
 
