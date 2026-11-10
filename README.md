@@ -7,7 +7,7 @@
 ![build](https://github.com/<owner>/<repo>/actions/workflows/<workflow>.yml/badge.svg)
 -->
 
-Track 2 (Full Stack DevOps) project for <course name>, <college>.
+Track 2 (Full Stack DevOps) project for DevOps course, Kinneret College.
 
 <!-- TODO: screenshot or GIF of the dashboard -->
 
