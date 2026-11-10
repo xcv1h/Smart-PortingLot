@@ -1,0 +1,90 @@
+/* Three colours only: text, "up", and alarm. */
+:root {
+    --bg:    #0a0d0a;
+    --fg:    #e6e6e6;
+    --up:    #4be37a;
+    --alarm: #ff4d4d;
+    /* Tells the browser the page is dark, so the log's scrollbar is dark too. */
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
+/* The body is a column that fills the window: table and status line on top,
+   the log takes whatever height is left, the prompt stays at the bottom. */
+body {
+    display: flex;
+    flex-direction: column;
+    padding: 16px 24px;
+    background: var(--bg);
+    color: var(--fg);
+    /* System monospace fonts only, so the page works with no internet. */
+    font-family: Consolas, Menlo, "DejaVu Sans Mono", "Courier New", monospace;
+    /* Large on purpose: it has to be readable on a classroom projector. */
+    font-size: 22px;
+    line-height: 1.4;
+}
+
+/* "pre" keeps the spaces that app.js uses to line the columns up. */
+#table {
+    white-space: pre;
+    /* Only as wide as its text, so a mirrored row stays in place. */
+    width: max-content;
+    margin-top: 1.4em;
+}
+
+.up {
+    color: var(--up);
+}
+
+.mirrored {
+    transform: scaleX(-1);
+}
+
+#status {
+    margin: 1.4em 0;
+    width: max-content;
+}
+
+/* Reverse video, the way a terminal highlights text. */
+.alarm {
+    background: var(--alarm);
+    color: var(--bg);
+    font-weight: bold;
+}
+
+#log {
+    flex: 1;
+    /* Without min-height: 0 a flex item never gets smaller than its content,
+       so the log would push the prompt off screen instead of scrolling. */
+    min-height: 0;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.error {
+    color: var(--alarm);
+}
+
+#prompt {
+    display: flex;
+}
+
+/* The input must look like text typed on the terminal, not like a form field. */
+#cmd {
+    flex: 1;
+    border: none;
+    outline: none;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
