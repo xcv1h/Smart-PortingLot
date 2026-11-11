@@ -40,10 +40,23 @@ from pydantic import BaseModel
 
 # --- Configuration (environment variables, with defaults) --------------------
 
+def read_number(name: str, default: str, convert, minimum):
+    """Read a numeric setting. A bad value stops the container with one clear
+    line in `docker compose logs` instead of a Python traceback."""
+    raw = os.environ.get(name, default)
+    try:
+        value = convert(raw)
+    except ValueError:
+        sys.exit(f"Configuration error: {name}={raw!r} is not a number.")
+    if value < minimum:
+        sys.exit(f"Configuration error: {name}={raw!r} must be at least {minimum}.")
+    return value
+
+
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
-REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
-CAPACITY = int(os.environ.get("CAPACITY", "8"))
-RATE_PER_HOUR = float(os.environ.get("RATE_PER_HOUR", "12.0"))
+REDIS_PORT = read_number("REDIS_PORT", "6379", int, 1)
+CAPACITY = read_number("CAPACITY", "8", int, 1)
+RATE_PER_HOUR = read_number("RATE_PER_HOUR", "12.0", float, 0)
 
 PORTS = [f"Gi0/{n}" for n in range(1, CAPACITY + 1)]
 PORT_KEYS = [f"port:{port}" for port in PORTS]

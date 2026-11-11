@@ -66,6 +66,12 @@ curl -X POST http://localhost:8080/api/cars \
 curl -X DELETE http://localhost:8080/api/cars/12345678
 ```
 
+Or let the camera simulator do it. It parks and releases random plates every few seconds until you press Ctrl+C, and needs only Python 3:
+
+```sh
+python tools/camera.py
+```
+
 Stop:
 
 ```sh
@@ -85,14 +91,19 @@ The backend runs as a non-root user and the image holds only the app code and it
 
 ### Configuration
 
-All variables are optional. They are read by the backend at startup.
+All variables are optional. To change one, copy `.env.example` to `.env` in the repository root, edit it, and run `docker compose up -d` again. Compose reads `.env` and passes the values on.
 
-| Variable        | Service | Default | Meaning |
-|-----------------|---------|---------|---------|
-| `REDIS_HOST`    | backend | `redis` | Hostname of the Redis service |
-| `REDIS_PORT`    | backend | `6379`  | Port of the Redis service |
-| `CAPACITY`      | backend | `8`     | Number of ports, named `Gi0/1` ... `Gi0/<CAPACITY>` |
-| `RATE_PER_HOUR` | backend | `12.0`  | Parking fee per hour, charged pro rata by the second |
+| Variable        | Service        | Default | Meaning |
+|-----------------|----------------|---------|---------|
+| `REDIS_PORT`    | backend, redis | `6379`  | Port Redis listens on inside the compose network. The backend connects to the same value |
+| `CAPACITY`      | backend        | `8`     | Number of ports, named `Gi0/1` ... `Gi0/<CAPACITY>`. A whole number, at least 1 |
+| `RATE_PER_HOUR` | backend        | `12.0`  | Parking fee per hour, charged pro rata by the second. 0 or more |
+
+`REDIS_HOST` (default `redis`) is set in `compose.yaml` to the service name and is not meant to be changed there.
+
+The backend refuses to start on a value that is not a number or is below the minimum, and says which one in `docker compose logs backend`.
+
+Lower `CAPACITY` only while the ports above the new limit are empty. A car left on `Gi0/8` when the lot shrinks to 4 ports stays in Redis but is no longer listed and cannot be released until the capacity is raised again.
 
 ## API
 
@@ -146,7 +157,7 @@ docker compose up -d --wait
 
 ## CI/CD
 
-Workflow: `.github/workflows/ci.yml`, runs on every push and pull request.
+Workflow: `.github/workflows/ci.yml`, runs on every push and pull request. hadolint is pinned to a fixed version, like the images.
 
 | Step | What it checks |
 |------|----------------|
@@ -155,17 +166,16 @@ Workflow: `.github/workflows/ci.yml`, runs on every push and pull request.
 | Build | Both images build from their Dockerfiles |
 | Smoke test | `docker compose up --wait`, then `POST` a plate and `GET /api/ports` returns it |
 | Persistence test | `docker compose down`, `up --wait` again, the plate is still there |
+| Release test | `DELETE` the plate, `GET /api/ports` no longer returns it |
 
 ### Images (bonus)
 
-<!-- TODO: only if the GHCR push is implemented -->
+Published to GitHub Container Registry on every push to `main`, after all the checks above have passed:
 
-Published to GitHub Container Registry on <trigger>:
+- `ghcr.io/xcv1h/smart-portinglot-frontend`
+- `ghcr.io/xcv1h/smart-portinglot-backend`
 
-- `ghcr.io/xcv1h/smart-portinglot-frontend:<tag>`
-- `ghcr.io/xcv1h/smart-portinglot-backend:<tag>`
-
-Tagging scheme: <TODO>
+Tagging scheme: each image gets two tags. The 7-character commit SHA (for example `:5a8b6e1`) never moves, so a running image can be traced back to its commit. `:latest` always points at the newest `main`.
 
 ## The switch theme
 
@@ -201,6 +211,8 @@ parking-sw#
 
 The dashboard also takes commands: `help`, `show parking-table`, `park <plate>` and `shutdown <port>`.
 
+Mock mode: open http://localhost:8080/?mock=1 and the dashboard runs on fake in-memory data instead of the API (8 ports, two cars already parked). It exists so the frontend can be worked on without the backend, and it resets on every page reload.
+
 ### Extras
 
 - Parking fee on release, charged by the second.
@@ -222,13 +234,18 @@ The dashboard also takes commands: `help`, `show parking-table`, `park <plate>` 
 │   ├── Dockerfile
 │   ├── requirements.txt    runtime dependencies, pinned
 │   ├── requirements-dev.txt
+│   ├── pytest.ini
 │   ├── app/main.py         the whole API, key layout documented at the top
 │   └── tests/test_api.py
+├── tools/camera.py         camera simulator: parks and releases random plates
 ├── .github/workflows/ci.yml
 ├── compose.yaml
+├── .env.example            optional settings, copy to .env
 ├── AI_USAGE.md
 ├── ARCHITECTURE.md
-└── README.md
+├── LICENSE
+├── README.md
+└── showcase.gif            the demo recording at the top of this file
 ```
 
 Run the backend tests without Docker:

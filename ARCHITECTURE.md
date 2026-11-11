@@ -25,11 +25,11 @@ The app is one file on purpose, about 200 lines, so anyone can explain every lin
 
 ## 3. No Dockerfile for Redis
 
-**Decision:** `redis` uses the official `redis:8.10-alpine` image straight from Docker Hub, configured with one command-line flag in `compose.yaml`.
+**Decision:** `redis` uses the official `redis:8.10-alpine` image straight from Docker Hub, configured with command-line flags in `compose.yaml`.
 
 **Alternative:** a `redis/Dockerfile` that copies in a `redis.conf`.
 
-**Why:** we change exactly one setting (`--appendonly yes`), and Redis accepts it as a command argument. A Dockerfile that only adds a config file would be an extra image to build, scan and explain, for no gain. The two services that *do* have Dockerfiles need them: nginx gets our config and static files, the backend gets our code and dependencies.
+**Why:** we change one setting (`--appendonly yes`) and pass the port through (`--port`, so `REDIS_PORT` moves the server and the backend together), and Redis accepts both as command arguments. A Dockerfile that only adds a config file would be an extra image to build, scan and explain, for no gain. The two services that *do* have Dockerfiles need them: nginx gets our config and static files, the backend gets our code and dependencies.
 
 ## 4. Redis as the only state
 

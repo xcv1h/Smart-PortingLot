@@ -26,11 +26,11 @@ services:
     
   redis:
     image: redis:8.10-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--port", "${REDIS_PORT:-6379}"]
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:-6379}", "ping"]
       interval: 7s
       timeout: 3s
       retries: 5

@@ -1,7 +1,7 @@
-# CI for Smart PortingLot. The five rows of the README's CI/CD table are done
-# in this order: Lint, Unit tests, Build, Smoke test, Persistence test.
-# The last three live in one job ("stack") because they all need the same
-# running containers.
+# CI for Smart PortingLot. The rows of the README's CI/CD table are done in
+# this order: Lint, Unit tests, Build, Smoke test, Persistence test, Release
+# test. The last four live in one job ("stack") because they all need the
+# same running containers. On main, a final job publishes the images.
 name: CI
 
 on:
@@ -21,10 +21,10 @@ jobs:
       # It exits non-zero on any finding at its default threshold, and that
       # non-zero exit is what fails the step.
       - name: hadolint frontend/Dockerfile
-        run: docker run --rm -i hadolint/hadolint < frontend/Dockerfile
+        run: docker run --rm -i hadolint/hadolint:v2.15.1 < frontend/Dockerfile
 
       - name: hadolint backend/Dockerfile
-        run: docker run --rm -i hadolint/hadolint < backend/Dockerfile
+        run: docker run --rm -i hadolint/hadolint:v2.15.1 < backend/Dockerfile
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -73,6 +73,18 @@ jobs:
           docker compose up -d --wait
           curl -sf localhost:8080/api/ports | grep -q 12345678
 
+      # The other half of the API: release the car, then the plate must be
+      # gone. The state is saved in a variable first, so a failing curl fails
+      # the step by itself and is not mistaken for "plate not found".
+      - name: Release test
+        run: |
+          curl -sf -X DELETE localhost:8080/api/cars/12345678
+          ports=$(curl -sf localhost:8080/api/ports)
+          if echo "$ports" | grep -q 12345678; then
+            echo "plate is still parked after DELETE"
+            exit 1
+          fi
+
       # Runs even when an earlier step failed: show what the containers were
       # doing, then remove them and the volume so nothing is left behind.
       - name: Show logs and clean up
@@ -81,3 +93,36 @@ jobs:
           docker compose ps
           docker compose logs
           docker compose down -v
+
+  # Bonus: publish both images to GitHub Container Registry (ghcr.io).
+  # Only for pushes to main, and only after every check above passed, so a
+  # published image is always one that built, started and kept its data.
+  publish:
+    needs: [stack]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # lets the built-in GITHUB_TOKEN push to ghcr.io
+    steps:
+      - uses: actions/checkout@v4
+
+      # GITHUB_TOKEN is created by GitHub for this run; no secret to set up.
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Two tags per image: the short commit SHA (never moves, so any image
+      # can be traced back to its commit) and latest (always the newest main).
+      # Image names must be lower case, hence ${GITHUB_REPOSITORY,,}.
+      # The source label is what makes GitHub show the package on the
+      # repository's page and link it back to the code.
+      - name: Build and push
+        run: |
+          sha=${GITHUB_SHA::7}
+          for service in frontend backend; do
+            image=ghcr.io/${GITHUB_REPOSITORY,,}-$service
+            docker build \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              -t "$image:$sha" -t "$image:latest" "./$service"
+            docker push --all-tags "$image"
+          done

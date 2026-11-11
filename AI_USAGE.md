@@ -80,23 +80,26 @@ Reply 4:
 
 The file has probably changed since I read it. Let me re-read it now.
 
-Bash Re-read compose.yaml and validate it
-IN
-cat -n compose.yaml && echo && echo "--- docker compose config:" && docker compose config --quiet && echo "config OK"
+The command it ran, and the output:
 
-OUT
+```
+$ cat -n compose.yaml && echo && echo "--- docker compose config:" && docker compose config --quiet && echo "config OK"
      1	services:
      2	  frontend:
      3	    build: ./frontend
 ...
 --- docker compose config:
 config OK
+```
+
 I read an older save earlier, but the current file has the persistence, Redis healthcheck and ordering, so I'm now checking it with the README's demo script: bring it up, park a car, restart, and confirm the car is still there.
 
-Inaccuracy 1: stale compose.yaml led to inaccurate feedback
-
-Reply 5:
+Reply 4, continued (later in the same check, no new prompt):
 
 My curl helper was firing three requests per call, which explains the parked cars and the wrong status, while the docs check is fine. I'm fixing the helper to send one request, flushing Redis, and rebuilding the image with the corrected ignore file.
 
-Inaccuracy 2: self-written curl helper caused rapid request 
+What the AI got wrong:
+
+Inaccuracy 1: stale compose.yaml led to inaccurate feedback. Reply 3 reviewed an older save of the file, so three of its four points (persistence, healthchecks, the pinned Redis tag) asked for changes that were already made. It only re-read the file after being challenged in Prompt 4.
+
+Inaccuracy 2: a self-written curl helper sent three requests per call. While verifying the stack, the AI's own test helper fired every request three times, so extra cars were parked and the statuses it reported were wrong. The fault was in its test tooling, not in the project, and it had to flush Redis and repeat the check.
