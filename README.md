@@ -9,7 +9,7 @@
 
 Track 2 (Full Stack DevOps) project for DevOps course, Kinneret College.
 
-<!-- TODO: screenshot or GIF of the dashboard -->
+![demo](https://github.com/xcv1h/Smart-PortingLot/showcase.gif)
 
 ## Contents
 
