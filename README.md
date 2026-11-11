@@ -3,9 +3,7 @@
 > Smart Parking License Plate Tracker, where the parking lot is a Cisco switch.
 > Slots are ports, a parked car is a link in the `up` state, and the guard reads it all from `show parking-table`.
 
-<!-- TODO: uncomment once .github/workflows/ci.yml exists
 ![build](https://github.com/xcv1h/Smart-PortingLot/actions/workflows/ci.yml/badge.svg)
--->
 
 Track 2 (Full Stack DevOps) project for DevOps course, Kinneret College.
 
@@ -147,8 +145,6 @@ docker compose up -d --wait
 ```
 
 ## CI/CD
-
-<!-- TODO: the workflow is not written yet; this is the plan it must match -->
 
 Workflow: `.github/workflows/ci.yml`, runs on every push and pull request.
 
