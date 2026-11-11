@@ -1,0 +1,83 @@
+# CI for Smart PortingLot. The five rows of the README's CI/CD table are done
+# in this order: Lint, Unit tests, Build, Smoke test, Persistence test.
+# The last three live in one job ("stack") because they all need the same
+# running containers.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose.yaml
+        run: docker compose config --quiet
+
+      # hadolint reads the Dockerfile from stdin, so nothing has to be installed.
+      # It exits non-zero on any finding at its default threshold, and that
+      # non-zero exit is what fails the step.
+      - name: hadolint frontend/Dockerfile
+        run: docker run --rm -i hadolint/hadolint < frontend/Dockerfile
+
+      - name: hadolint backend/Dockerfile
+        run: docker run --rm -i hadolint/hadolint < backend/Dockerfile
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend   # pytest.ini and requirements-dev.txt are here
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"     # same Python as the backend image (python:3.13-alpine)
+
+      # requirements-dev.txt pulls in fakeredis, so no Redis server is needed.
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: python -m pytest
+
+  stack:
+    needs: [lint, unit-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --build builds both images from their Dockerfiles (the "Build" row).
+      # --wait returns only once backend and redis report healthy, so the API
+      # is answering by the time the next step runs.
+      - name: Build images and start the stack
+        run: docker compose up -d --build --wait
+
+      # curl -sf: -f turns a non-2xx status into a non-zero exit, which fails
+      # the step. grep -q fails the same way when the plate is not in the body.
+      - name: Smoke test
+        run: |
+          curl -sf -X POST localhost:8080/api/cars \
+               -H 'Content-Type: application/json' -d '{"plate":"12345678"}'
+          curl -sf localhost:8080/api/ports | grep -q 12345678
+
+      # down WITHOUT -v keeps the redis-data volume; the plate must still be
+      # there after the containers are recreated.
+      - name: Persistence test
+        run: |
+          docker compose down
+          docker compose up -d --wait
+          curl -sf localhost:8080/api/ports | grep -q 12345678
+
+      # Runs even when an earlier step failed: show what the containers were
+      # doing, then remove them and the volume so nothing is left behind.
+      - name: Show logs and clean up
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs
+          docker compose down -v
