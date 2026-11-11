@@ -11,6 +11,9 @@ services:
     build: ./backend
     environment:
       REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      CAPACITY: ${CAPACITY:-8}
+      RATE_PER_HOUR: ${RATE_PER_HOUR:-12.0}
     depends_on:
       redis:
         condition: service_healthy
