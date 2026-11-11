@@ -116,13 +116,25 @@ jobs:
       # Image names must be lower case, hence ${GITHUB_REPOSITORY,,}.
       # The source label is what makes GitHub show the package on the
       # repository's page and link it back to the code.
+      # try: runs one docker command. If it fails, the last lines it printed
+      # are repeated as an error annotation, so the reason (for example a
+      # push that ghcr.io denied) shows on the run's summary page without
+      # opening the log. pipefail makes the `if` see docker's exit code
+      # instead of tee's.
       - name: Build and push
         run: |
+          set -o pipefail
+          try() {
+            if ! "$@" 2>&1 | tee /tmp/docker.log; then
+              echo "::error title=docker $2 failed::$(grep -v '^$' /tmp/docker.log | tail -n 3 | tr '\n' ' ')"
+              exit 1
+            fi
+          }
           sha=${GITHUB_SHA::7}
           for service in frontend backend; do
             image=ghcr.io/${GITHUB_REPOSITORY,,}-$service
-            docker build \
+            try docker build \
               --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
               -t "$image:$sha" -t "$image:latest" "./$service"
-            docker push --all-tags "$image"
+            try docker push --all-tags "$image"
           done
