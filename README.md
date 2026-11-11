@@ -249,4 +249,5 @@ python -m pytest
 | Name | GitHub | Worked on |
 |------|--------|-----------|
 | Tymofii Zhurida | [@xcv1h](https://github.com/xcv1h) | Backend + Documentation |
-| Nathan Baleysh | [@mashmidnmalim23](https://github.com/mashmidnmalim23) | Frontend + GitHub Actions |
+| Nathan Baleysh | [@mashmidnmalim23](https://github.com/mashmidnmalim23) | Frontend |
+| Or Yiftach Kanner | [@orkanner-ai](https://github.com/orkanner-ai) | GitHub Actions |
